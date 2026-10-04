@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import sys
+
+EXTENSION_SOURCES = ("npm:", "file:", "github:", "git:", "http:", "https:")
+
+
+def usage() -> None:
+    print(
+        "Usage: pi-profile {local|remote} [--show] [pi args...]",
+        file=sys.stderr,
+    )
+
+
+def supports_color() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("CLICOLOR_FORCE"):
+        return True
+    return sys.stdout.isatty()
+
+
+def unicode_marks() -> tuple[str, str] | None:
+    if os.environ.get("PI_PROFILE_ASCII"):
+        return None
+
+    marks = ("✓", "✗")
+    encoding = sys.stdout.encoding or "utf-8"
+
+    try:
+        for mark in marks:
+            mark.encode(encoding)
+    except UnicodeEncodeError:
+        return None
+
+    return marks
+
+
+def get_extensions() -> list[tuple[str, str]]:
+    result = subprocess.run(
+        ["pi", "list"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    extensions: list[tuple[str, str]] = []
+    source: str | None = None
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+
+        if line.startswith(EXTENSION_SOURCES):
+            source = line
+            continue
+
+        if source and line:
+            extensions.append((source, os.path.expanduser(line)))
+            source = None
+
+    return extensions
+
+
+def should_load(mode: str, source: str, path: str) -> bool:
+    extension = f"{source} {path}"
+
+    blocked = {
+        "local": "pi-ssh-remote-autocomplete-fix",
+        "remote": "pi-sandbox",
+    }
+
+    return blocked[mode] not in extension
+
+
+def show_extensions(
+    mode: str,
+    extensions: list[tuple[str, str]],
+) -> None:
+    color = supports_color()
+    marks = unicode_marks()
+
+    green = "\033[1;32m" if color else ""
+    red = "\033[1;31m" if color else ""
+    dim = "\033[2m" if color else ""
+    reset = "\033[0m" if color else ""
+
+    print("Found extensions:")
+
+    for source, path in extensions:
+        use = should_load(mode, source, path)
+
+        if marks:
+            yes, no = marks
+            status = f"{yes} USE" if use else f"{no} SKIP"
+        else:
+            status = "USE " if use else "SKIP"
+
+        tint = green if use else red
+
+        print(f"  [{tint}{status}{reset}] {source}")
+        print(f"         {dim}{path}{reset}")
+
+
+def main() -> None:
+    if len(sys.argv) < 2 or sys.argv[1] not in {"local", "remote"}:
+        usage()
+        raise SystemExit(2)
+
+    mode = sys.argv[1]
+    pi_args = sys.argv[2:]
+
+    # --show is a pi-profile option only when it immediately follows
+    # the profile name. Any later --show is passed through to pi.
+    show = bool(pi_args and pi_args[0] == "--show")
+    if show:
+        pi_args = pi_args[1:]
+
+    extensions = get_extensions()
+
+    if show:
+        show_extensions(mode, extensions)
+        return
+
+    args = ["pi", "--no-extensions"]
+
+    for source, path in extensions:
+        if should_load(mode, source, path):
+            args.extend(["-e", path])
+
+    os.execvp("pi", [*args, *pi_args])
+
+
+if __name__ == "__main__":
+    main()
+
+
