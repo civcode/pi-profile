@@ -4,7 +4,11 @@ import os
 import subprocess
 import sys
 
-EXTENSION_SOURCES = ("npm:", "file:", "github:", "git:", "http:", "https:")
+EXTENSION_SOURCES = (
+    "npm:", "file:", "github:", "git:", "http:", "https:",
+    "./", "../", "~/", "/",
+)
+PATH_PREFIXES = ("/", "./", "../", "~/")
 
 
 def usage() -> None:
@@ -47,18 +51,24 @@ def get_extensions() -> list[tuple[str, str]]:
     )
 
     extensions: list[tuple[str, str]] = []
+    seen_paths: set[str] = set()
     source: str | None = None
 
     for line in result.stdout.splitlines():
         line = line.strip()
 
-        if line.startswith(EXTENSION_SOURCES):
-            source = line
+        # A package source can itself be a path. Consume its resolved path
+        # before checking whether the next line starts a new source.
+        if source and line.startswith(PATH_PREFIXES):
+            path = os.path.expanduser(line)
+            canonical_path = os.path.realpath(path)
+            if canonical_path not in seen_paths:
+                extensions.append((source, path))
+                seen_paths.add(canonical_path)
+            source = None
             continue
 
-        if source and line:
-            extensions.append((source, os.path.expanduser(line)))
-            source = None
+        source = line if line.startswith(EXTENSION_SOURCES) else None
 
     return extensions
 
@@ -67,11 +77,11 @@ def should_load(mode: str, source: str, path: str) -> bool:
     extension = f"{source} {path}"
 
     blocked = {
-        "local": "pi-ssh-remote-autocomplete-fix",
-        "remote": "pi-sandbox",
+        "local": ["pi-ssh-remote-autocomplete-fix", "pi-ssh-remote"],
+        "remote": ["pi-sandbox"],
     }
 
-    return blocked[mode] not in extension
+    return not any(name in extension for name in blocked[mode])
 
 
 def show_extensions(
