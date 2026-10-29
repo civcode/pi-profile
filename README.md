@@ -82,11 +82,11 @@ pi-profile local -- some-command
 
 ## How it works
 
-`pi-profile` runs `pi list`, parses the available extensions, and then starts `pi` with the matching extension paths.
+`pi-profile` runs `pi list`, parses the available extensions (including relative or absolute local package paths), deduplicates repeated resolved paths, and then starts `pi` with the matching extension paths.
 
 It skips certain extensions automatically depending on the selected profile. By default:
 
-- `local` skips `pi-ssh-remote-autocomplete-fix`
+- `local` skips `pi-ssh-remote-autocomplete-fix` and `pi-ssh-remote`
 - `remote` skips `pi-sandbox`
 
 ## Configuring excluded extensions
@@ -95,13 +95,13 @@ The exclusion list is defined in the `should_load()` function of the script, in 
 
 ```python
 blocked = {
-    "local": "pi-ssh-remote-autocomplete-fix",
-    "remote": "pi-sandbox",
+    "local": ["pi-ssh-remote-autocomplete-fix", "pi-ssh-remote"],
+    "remote": ["pi-sandbox"],
 }
 ```
 
 - Each key is a profile name (`local` or `remote`).
-- Each value is a substring. An extension is skipped if this substring appears in its source or path, as shown by `pi list`.
+- Each value is a list of substrings. An extension is skipped if **any** substring appears in its source or path, as shown by `pi list`.
 
 To change which extension is excluded, edit the installed script:
 
@@ -113,8 +113,8 @@ For example, to skip `my-other-extension` in the `local` profile:
 
 ```python
 blocked = {
-    "local": "my-other-extension",
-    "remote": "pi-sandbox",
+    "local": ["pi-ssh-remote", "my-other-extension"],
+    "remote": ["pi-sandbox"],
 }
 ```
 
@@ -125,8 +125,6 @@ pi-profile local --show
 ```
 
 Skipped extensions are marked `SKIP`.
-
-> Note: each profile currently supports one substring. To exclude several extensions per profile, change `should_load()` to use a tuple of substrings, for example `any(b in extension for b in blocked[mode])`, and make each dictionary value a tuple.
 
 If you installed with a symlink, edit the file in the cloned repository instead.
 
