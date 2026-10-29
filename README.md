@@ -30,7 +30,7 @@ export PATH="$HOME/.local/bin:$PATH"
 Verify the installation:
 
 ```bash
-pi-profile local --show
+pi-profile --show local
 ```
 
 To update, pull the latest changes and copy the script again. Alternatively, symlink it so updates apply automatically:
@@ -42,7 +42,7 @@ ln -sf "$(pwd)/pi-profile" ~/.local/bin/pi-profile
 ## Usage
 
 ```bash
-pi-profile {local|remote} [--show] [pi args...]
+pi-profile [--show] {local|remote} [pi args...]
 ```
 
 ### Profiles
@@ -52,11 +52,11 @@ pi-profile {local|remote} [--show] [pi args...]
 
 ### Show what will be loaded
 
-Use `--show` immediately after the profile name to preview the selected extensions without launching `pi`:
+Use `--show` before the profile name to preview the selected extensions without launching `pi`:
 
 ```bash
-pi-profile local --show
-pi-profile remote --show
+pi-profile --show local
+pi-profile --show remote
 ```
 
 Example output:
@@ -91,17 +91,19 @@ It skips certain extensions automatically depending on the selected profile. By 
 
 ## Configuring excluded extensions
 
-The exclusion list is defined in the `should_load()` function of the script, in the `blocked` dictionary:
+The exclusion lists are defined near the top of the `pi-profile` script:
 
 ```python
-blocked = {
-    "local": ["pi-ssh-remote-autocomplete-fix", "pi-ssh-remote"],
-    "remote": ["pi-sandbox"],
-}
+# Package-name fragments excluded from the local profile.
+# Match against the source shown by `pi list` or its resolved filesystem path.
+BLOCKED_FOR_LOCAL = ["pi-ssh-remote-autocomplete-fix", "pi-ssh-remote"]
+
+# Package-name fragments excluded from the remote profile.
+# The sandbox extension is intended for the local profile only.
+BLOCKED_FOR_REMOTE = ["pi-sandbox"]
 ```
 
-- Each key is a profile name (`local` or `remote`).
-- Each value is a list of substrings. An extension is skipped if **any** substring appears in its source or path, as shown by `pi list`.
+Each constant is a list of substrings. An extension is skipped if **any** substring matches its source or path in `pi list`.
 
 To change which extension is excluded, edit the installed script:
 
@@ -109,19 +111,20 @@ To change which extension is excluded, edit the installed script:
 $EDITOR ~/.local/bin/pi-profile
 ```
 
-For example, to skip `my-other-extension` in the `local` profile:
+For example, to also skip `my-other-extension` in the `local` profile:
 
 ```python
-blocked = {
-    "local": ["pi-ssh-remote", "my-other-extension"],
-    "remote": ["pi-sandbox"],
-}
+BLOCKED_FOR_LOCAL = [
+    "pi-ssh-remote-autocomplete-fix",
+    "pi-ssh-remote",
+    "my-other-extension",
+]
 ```
 
 Use the exact name (or a unique part of it) as it appears in `pi list`. Then check the result:
 
 ```bash
-pi-profile local --show
+pi-profile --show local
 ```
 
 Skipped extensions are marked `SKIP`.
@@ -136,13 +139,13 @@ If you installed with a symlink, edit the file in the cloned repository instead.
 
 ## Notes
 
-- `--show` only works as a `pi-profile` option when it appears immediately after `local` or `remote`.
-- Any later `--show` is passed through to `pi`.
+- `--show` only works as a `pi-profile` option when it appears before `local` or `remote`.
+- Any `--show` following the profile name is passed through to `pi`.
 
 ## Example
 
 ```bash
-pi-profile local --show
+pi-profile --show local
 pi-profile remote
 ```
 
