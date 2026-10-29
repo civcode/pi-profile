@@ -10,10 +10,18 @@ EXTENSION_SOURCES = (
 )
 PATH_PREFIXES = ("/", "./", "../", "~/")
 
+# Package-name fragments excluded from the local profile.
+# Match against the source shown by `pi list` or its resolved filesystem path.
+BLOCKED_FOR_LOCAL = ["pi-ssh-remote-autocomplete-fix", "pi-ssh-remote"]
+
+# Package-name fragments excluded from the remote profile.
+# The sandbox extension is intended for the local profile only.
+BLOCKED_FOR_REMOTE = ["pi-sandbox"]
+
 
 def usage() -> None:
     print(
-        "Usage: pi-profile {local|remote} [--show] [pi args...]",
+        "Usage: pi-profile [--show] {local|remote} [pi args...]",
         file=sys.stderr,
     )
 
@@ -76,12 +84,8 @@ def get_extensions() -> list[tuple[str, str]]:
 def should_load(mode: str, source: str, path: str) -> bool:
     extension = f"{source} {path}"
 
-    blocked = {
-        "local": ["pi-ssh-remote-autocomplete-fix", "pi-ssh-remote"],
-        "remote": ["pi-sandbox"],
-    }
-
-    return not any(name in extension for name in blocked[mode])
+    blocked = {"local": BLOCKED_FOR_LOCAL, "remote": BLOCKED_FOR_REMOTE}[mode]
+    return not any(name in extension for name in blocked)
 
 
 def show_extensions(
@@ -114,19 +118,17 @@ def show_extensions(
 
 
 def main() -> None:
-    if len(sys.argv) < 2 or sys.argv[1] not in {"local", "remote"}:
+    args = sys.argv[1:]
+    show = bool(args and args[0] == "--show")
+    if show:
+        args = args[1:]
+
+    if not args or args[0] not in {"local", "remote"}:
         usage()
         raise SystemExit(2)
 
-    mode = sys.argv[1]
-    pi_args = sys.argv[2:]
-
-    # --show is a pi-profile option only when it immediately follows
-    # the profile name. Any later --show is passed through to pi.
-    show = bool(pi_args and pi_args[0] == "--show")
-    if show:
-        pi_args = pi_args[1:]
-
+    mode = args[0]
+    pi_args = args[1:]
     extensions = get_extensions()
 
     if show:
