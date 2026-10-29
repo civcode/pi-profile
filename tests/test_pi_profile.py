@@ -1,5 +1,7 @@
 """Local tests for pi-profile, without starting Pi or GitHub Actions."""
 
+import contextlib
+import io
 import runpy
 import sys
 import unittest
@@ -65,6 +67,52 @@ class PiProfileTests(unittest.TestCase):
             "pi", "--no-extensions", "-e", "/tmp/pi-ssh-remote-autocomplete-fix",
             "-e", "/tmp/pi-token-speed", "--print",
         ])
+
+
+    def test_show_before_remote_profile(self):
+        extensions = [
+            ("npm:pi-sandbox", "/tmp/pi-sandbox"),
+            ("file:pi-ssh-remote", "/tmp/pi-ssh-remote"),
+        ]
+        output = io.StringIO()
+        with patch.dict(PROFILE["main"].__globals__, {"get_extensions": lambda: extensions}), \
+             patch.object(sys, "argv", ["pi-profile", "--show", "remote"]), \
+             patch.object(PROFILE["os"], "execvp") as execvp, \
+             contextlib.redirect_stdout(output):
+            PROFILE["main"]()
+        execvp.assert_not_called()
+        self.assertIn("SKIP", output.getvalue())
+        self.assertIn("pi-ssh-remote", output.getvalue())
+
+    def test_show_before_local_profile(self):
+        extensions = [
+            ("npm:pi-sandbox", "/tmp/pi-sandbox"),
+            ("file:pi-ssh-remote", "/tmp/pi-ssh-remote"),
+        ]
+        output = io.StringIO()
+        with patch.dict(PROFILE["main"].__globals__, {"get_extensions": lambda: extensions}), \
+             patch.object(sys, "argv", ["pi-profile", "--show", "local"]), \
+             patch.object(PROFILE["os"], "execvp") as execvp, \
+             contextlib.redirect_stdout(output):
+            PROFILE["main"]()
+        execvp.assert_not_called()
+        self.assertIn("SKIP", output.getvalue())
+        self.assertIn("pi-ssh-remote", output.getvalue())
+
+    def test_show_after_profile_is_forwarded(self):
+        with patch.dict(PROFILE["main"].__globals__, {"get_extensions": lambda: []}), \
+             patch.object(sys, "argv", ["pi-profile", "remote", "--show"]), \
+             patch.object(PROFILE["os"], "execvp") as execvp:
+            PROFILE["main"]()
+        execvp.assert_called_once_with("pi", ["pi", "--no-extensions", "--show"])
+
+    def test_missing_profile_after_show_is_usage_error(self):
+        with patch.object(sys, "argv", ["pi-profile", "--show"]), \
+             contextlib.redirect_stderr(io.StringIO()) as stderr:
+            with self.assertRaises(SystemExit) as error:
+                PROFILE["main"]()
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn("pi-profile [--show] {local|remote}", stderr.getvalue())
 
 
 if __name__ == "__main__":
