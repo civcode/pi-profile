@@ -84,6 +84,19 @@ pi-profile local -- some-command
 
 `pi-profile` runs `pi list`, parses the available extensions (including relative or absolute local package paths), deduplicates repeated resolved paths, and then starts `pi` with the matching extension paths.
 
+Pi's `--no-extensions` option disables built-in extensions too. To preserve the default built-in functionality, `pi-profile` explicitly passes these `-e` entries for **both** profiles:
+
+```python
+BUILTIN_EXTENSIONS = (
+    "builtin:mcp",
+    "builtin:llama.cpp",
+    "builtin:codemode",
+    "builtin:tool-search",
+)
+```
+
+These built-ins appear in `pi-profile --show local` and `pi-profile --show remote`. The list is configurable near the top of the script; remove an entry if you do not want that built-in loaded by the profiles. **Explicit `-e` loading takes precedence over a built-in disabled in Pi settings**, so adjust this list if you disabled one in `pi config`.
+
 It skips certain extensions automatically depending on the selected profile. By default:
 
 - `local` skips `pi-ssh-remote-autocomplete-fix` and `pi-ssh-remote`
