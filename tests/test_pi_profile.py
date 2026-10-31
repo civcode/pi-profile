@@ -64,7 +64,12 @@ class PiProfileTests(unittest.TestCase):
              patch.object(PROFILE["os"], "execvp") as execvp:
             PROFILE["main"]()
         execvp.assert_called_once_with("pi", [
-            "pi", "--no-extensions", "-e", "/tmp/pi-ssh-remote-autocomplete-fix",
+            "pi", "--no-extensions",
+            "-e", "builtin:mcp",
+            "-e", "builtin:llama.cpp",
+            "-e", "builtin:codemode",
+            "-e", "builtin:tool-search",
+            "-e", "/tmp/pi-ssh-remote-autocomplete-fix",
             "-e", "/tmp/pi-token-speed", "--print",
         ])
 
@@ -104,7 +109,41 @@ class PiProfileTests(unittest.TestCase):
              patch.object(sys, "argv", ["pi-profile", "remote", "--show"]), \
              patch.object(PROFILE["os"], "execvp") as execvp:
             PROFILE["main"]()
-        execvp.assert_called_once_with("pi", ["pi", "--no-extensions", "--show"])
+        execvp.assert_called_once_with("pi", [
+            "pi", "--no-extensions",
+            "-e", "builtin:mcp",
+            "-e", "builtin:llama.cpp",
+            "-e", "builtin:codemode",
+            "-e", "builtin:tool-search",
+            "--show",
+        ])
+
+    def test_builtins_loaded_in_local_profile(self):
+        # Local profile excludes ssh extensions, but preserves built-ins.
+        extensions = [("file:pi-ssh-remote", "/tmp/pi-ssh-remote")]
+        with patch.dict(PROFILE["main"].__globals__, {"get_extensions": lambda: extensions}), \
+             patch.object(sys, "argv", ["pi-profile", "local"]), \
+             patch.object(PROFILE["os"], "execvp") as execvp:
+            PROFILE["main"]()
+
+        argv = execvp.call_args.args[1]
+        self.assertEqual(argv[:4], ["pi", "--no-extensions", "-e", "builtin:mcp"])
+        self.assertIn("builtin:llama.cpp", argv)
+        self.assertEqual(argv.count("builtin:llama.cpp"), 1)
+        self.assertNotIn("/tmp/pi-ssh-remote", argv)
+
+    def test_builtin_shown_in_preview(self):
+        output = io.StringIO()
+        with patch.dict(PROFILE["main"].__globals__, {"get_extensions": lambda: []}), \
+             patch.object(sys, "argv", ["pi-profile", "--show", "local"]), \
+             patch.object(PROFILE["os"], "execvp") as execvp, \
+             contextlib.redirect_stdout(output):
+            PROFILE["main"]()
+
+        execvp.assert_not_called()
+        self.assertIn("builtin:llama.cpp", output.getvalue())
+        self.assertIn("builtin:mcp", output.getvalue())
+        self.assertNotIn("SKIP", output.getvalue())
 
     def test_missing_profile_after_show_is_usage_error(self):
         with patch.object(sys, "argv", ["pi-profile", "--show"]), \
