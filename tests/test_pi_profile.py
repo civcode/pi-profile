@@ -173,11 +173,11 @@ class PiProfileTests(unittest.TestCase):
             executable.parent.mkdir(parents=True)
             registry.parent.mkdir(parents=True)
             (app / "package.json").write_text(json.dumps({"type": "module"}))
-            executable.write_text("#!/usr/bin/env node\\n")
+            executable.write_text("#!/usr/bin/env node\n")
             registry.write_text(
                 'export const builtInExtensions = ['
                 '{name: "llama.cpp"}, {name: "a-new-builtin"}, '
-                '{name: "llama.cpp"}];\\n'
+                '{name: "llama.cpp"}];\n'
             )
             shim = root / "pi"
             shim.symlink_to(executable)
@@ -187,7 +187,7 @@ class PiProfileTests(unittest.TestCase):
             self.assertEqual(names, ["builtin:llama.cpp", "builtin:a-new-builtin"])
 
     def test_registry_failure_is_not_silently_ignored(self):
-        with patch.object(PROFILE["shutil"], "which", return_value="/fake/bin/pi"), \\
+        with patch.object(PROFILE["shutil"], "which", return_value="/fake/bin/pi"), \
              patch.object(
                  PROFILE["subprocess"],
                  "run",
@@ -199,11 +199,11 @@ class PiProfileTests(unittest.TestCase):
                 PROFILE["get_builtin_extensions"]()
 
     def test_invalid_registry_output_is_rejected(self):
-        with patch.object(PROFILE["shutil"], "which", return_value="/fake/bin/pi"), \\
+        with patch.object(PROFILE["shutil"], "which", return_value="/fake/bin/pi"), \
              patch.object(
                  PROFILE["subprocess"],
                  "run",
-                 return_value=SimpleNamespace(stdout="unexpected line\\n"),
+                 return_value=SimpleNamespace(stdout="unexpected line\n"),
              ):
             with self.assertRaisesRegex(RuntimeError, "Unexpected output"):
                 PROFILE["get_builtin_extensions"]()
@@ -215,8 +215,8 @@ class PiProfileTests(unittest.TestCase):
         with patch.dict(
             PROFILE["main"].__globals__,
             {"get_builtin_extensions": fail, "get_extensions": lambda: []},
-        ), patch.object(sys, "argv", ["pi-profile", "local"]), \\
-             patch.object(PROFILE["os"], "execvp") as execvp, \\
+        ), patch.object(sys, "argv", ["pi-profile", "local"]), \
+             patch.object(PROFILE["os"], "execvp") as execvp, \
              contextlib.redirect_stderr(io.StringIO()) as stderr:
             with self.assertRaises(SystemExit) as error:
                 PROFILE["main"]()
@@ -231,7 +231,7 @@ class PiProfileTests(unittest.TestCase):
                 "get_builtin_extensions": lambda: ["builtin:llama.cpp", "builtin:new-name"],
                 "get_extensions": lambda: [],
             },
-        ), patch.object(sys, "argv", ["pi-profile", "remote"]), \\
+        ), patch.object(sys, "argv", ["pi-profile", "remote"]), \
              patch.object(PROFILE["os"], "execvp") as execvp:
             PROFILE["main"]()
         execvp.assert_called_once_with("pi", [
