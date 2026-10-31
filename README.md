@@ -84,6 +84,14 @@ pi-profile local -- some-command
 
 `pi-profile` runs `pi list`, parses the available extensions (including relative or absolute local package paths), deduplicates repeated resolved paths, and then starts `pi` with the matching extension paths.
 
+Pi's `--no-extensions` option disables built-in extensions too. Since `pi list` does not list them, `pi-profile` discovers the currently installed built-ins **at every invocation** by resolving the `pi` executable and importing `../extensions/index.js` from its installed package. The registry's `builtInExtensions` export supplies the names used as `-e builtin:...` arguments for both profiles. There is **no hardcoded list**, so newly added or renamed built-ins are included automatically.
+
+For example, if the registry contains `llama.cpp`, the preview from `pi-profile --show local` or `pi-profile --show remote` includes `builtin:llama.cpp`.
+
+**Requirements:** Node.js must be on `PATH` and the Pi installation must expose the `builtInExtensions` array at that registry path. If discovery fails, the command exits with an error instead of starting Pi without its built-ins. This assumes Pi keeps its current registry layout; changes to the registry location or API require updating the discovery code.
+
+**Filtering:** Both profiles include every discovered built-in by default. To exclude a particular built-in from a profile, add its full name (such as `"builtin:tool-search"`) to `BLOCKED_FOR_LOCAL` or `BLOCKED_FOR_REMOTE`. Explicit `-e` loading can override a built-in disabled in Pi's own settings; use the profile exclusion lists if needed.
+
 It skips certain extensions automatically depending on the selected profile. By default:
 
 - `local` skips `pi-ssh-remote-autocomplete-fix` and `pi-ssh-remote`

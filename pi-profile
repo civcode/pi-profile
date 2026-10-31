@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import shutil
 import subprocess
 import sys
 
@@ -9,6 +10,28 @@ EXTENSION_SOURCES = (
     "./", "../", "~/", "/",
 )
 PATH_PREFIXES = ("/", "./", "../", "~/")
+
+# Discover built-ins from the installed Pi registry rather than maintaining
+# a hardcoded list that can become stale when Pi adds or renames an extension.
+BUILTIN_DISCOVERY_SCRIPT = r"""
+import { realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const executable = realpathSync(process.argv[1]);
+const registry = resolve(dirname(executable), "../extensions/index.js");
+const { builtInExtensions } = await import(pathToFileURL(registry).href);
+
+if (!Array.isArray(builtInExtensions)) {
+  throw new Error("Pi registry does not export builtInExtensions as an array");
+}
+for (const ext of builtInExtensions) {
+  if (!ext || typeof ext.name !== "string" || !ext.name) {
+    throw new Error("Pi registry contains an extension without a valid name");
+  }
+  console.log(`builtin:${ext.name}`);
+}
+"""
 
 # Package-name fragments excluded from the local profile.
 # Match against the source shown by `pi list` or its resolved filesystem path.
@@ -48,6 +71,30 @@ def unicode_marks() -> tuple[str, str] | None:
         return None
 
     return marks
+
+
+def get_builtin_extensions() -> list[str]:
+    executable = shutil.which("pi")
+    if executable is None:
+        raise RuntimeError("Cannot discover built-ins: pi is not on PATH")
+
+    try:
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", BUILTIN_DISCOVERY_SCRIPT, executable],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("Cannot discover built-ins: Node.js is not on PATH") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise RuntimeError(f"Cannot discover built-ins from {executable}: {detail}") from exc
+
+    names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if any(not name.startswith("builtin:") or not name[8:] for name in names):
+        raise RuntimeError("Unexpected output from Pi built-in registry")
+    return list(dict.fromkeys(names))
 
 
 def get_extensions() -> list[tuple[str, str]]:
@@ -114,7 +161,8 @@ def show_extensions(
         tint = green if use else red
 
         print(f"  [{tint}{status}{reset}] {source}")
-        print(f"         {dim}{path}{reset}")
+        if path != source:
+            print(f"         {dim}{path}{reset}")
 
 
 def main() -> None:
@@ -129,7 +177,16 @@ def main() -> None:
 
     mode = args[0]
     pi_args = args[1:]
-    extensions = get_extensions()
+    # pi list only reports installed packages, not Pi's built-in extensions.
+    # Fail visibly if discovery breaks; silently omitting built-ins is unsafe.
+    try:
+        builtins = get_builtin_extensions()
+    except RuntimeError as exc:
+        print(f"pi-profile: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    extensions = [(name, name) for name in builtins]
+    extensions.extend(get_extensions())
 
     if show:
         show_extensions(mode, extensions)
