@@ -197,7 +197,7 @@ class PiProfileTests(unittest.TestCase):
             managed.mkdir(parents=True)
             version_file = managed / "current-version"
 
-            with patch.object(PROFILE["shutil"], "which", return_value=str(launcher)), \\
+            with patch.object(PROFILE["shutil"], "which", return_value=str(launcher)), \
                  patch.dict(PROFILE["os"].environ, {
                      "PI_CODING_AGENT_DIR": str(root / "agent"),
                      "PI_MANAGED_INSTALL_ROOT": "",
