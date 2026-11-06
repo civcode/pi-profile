@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,12 +15,9 @@ PATH_PREFIXES = ("/", "./", "../", "~/")
 # Discover built-ins from the installed Pi registry rather than maintaining
 # a hardcoded list that can become stale when Pi adds or renames an extension.
 BUILTIN_DISCOVERY_SCRIPT = r"""
-import { realpathSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const executable = realpathSync(process.argv[1]);
-const registry = resolve(dirname(executable), "../extensions/index.js");
+const registry = process.argv[1];
 const { builtInExtensions } = await import(pathToFileURL(registry).href);
 
 if (!Array.isArray(builtInExtensions)) {
@@ -73,14 +71,51 @@ def unicode_marks() -> tuple[str, str] | None:
     return marks
 
 
+def locate_builtin_registry(executable: str) -> str:
+    """Find the built-in extension registry in npm and managed Pi installs."""
+    resolved_pi = os.path.realpath(executable)
+    npm_registry = os.path.normpath(os.path.join(
+        os.path.dirname(resolved_pi), "..", "extensions", "index.js",
+    ))
+    if os.path.isfile(npm_registry):
+        return npm_registry
+
+    # The managed launcher (~/.local/bin/pi) is outside the npm package.
+    # The installer keeps the active release under the Pi agent directory.
+    agent_dir = os.path.expanduser(os.environ.get("PI_CODING_AGENT_DIR") or "~/.pi/agent")
+    managed_root = os.path.expanduser(
+        os.environ.get("PI_MANAGED_INSTALL_ROOT") or os.path.join(agent_dir, "install")
+    )
+    version_file = os.path.join(managed_root, "current-version")
+    try:
+        with open(version_file, encoding="utf-8-sig") as stream:
+            version = stream.read().strip()
+    except OSError as exc:
+        raise RuntimeError(
+            f"Cannot find Pi's built-in registry near {executable} or the managed "
+            f"installation version file at {version_file}"
+        ) from exc
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version):
+        raise RuntimeError(f"Invalid Pi managed installation version in {version_file}: {version!r}")
+
+    registry = os.path.join(
+        managed_root, "releases", version, "node_modules", "@earendil-works",
+        "pi-coding-agent", "dist", "extensions", "index.js",
+    )
+    if not os.path.isfile(registry):
+        raise RuntimeError(f"Pi built-in registry not found at {registry}")
+    return registry
+
+
 def get_builtin_extensions() -> list[str]:
     executable = shutil.which("pi")
     if executable is None:
         raise RuntimeError("Cannot discover built-ins: pi is not on PATH")
+    registry = locate_builtin_registry(executable)
 
     try:
         result = subprocess.run(
-            ["node", "--input-type=module", "-e", BUILTIN_DISCOVERY_SCRIPT, executable],
+            ["node", "--input-type=module", "-e", BUILTIN_DISCOVERY_SCRIPT, registry],
             check=True,
             text=True,
             capture_output=True,
@@ -89,7 +124,7 @@ def get_builtin_extensions() -> list[str]:
         raise RuntimeError("Cannot discover built-ins: Node.js is not on PATH") from exc
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or str(exc)).strip()
-        raise RuntimeError(f"Cannot discover built-ins from {executable}: {detail}") from exc
+        raise RuntimeError(f"Cannot discover built-ins from {registry}: {detail}") from exc
 
     names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     if any(not name.startswith("builtin:") or not name[8:] for name in names):
