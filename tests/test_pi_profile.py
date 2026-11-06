@@ -186,8 +186,80 @@ class PiProfileTests(unittest.TestCase):
                 names = PROFILE["get_builtin_extensions"]()
             self.assertEqual(names, ["builtin:llama.cpp", "builtin:a-new-builtin"])
 
+    @unittest.skipUnless(shutil.which("node"), "requires Node.js")
+    def test_discovers_managed_install_and_tracks_active_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            launcher = root / "bin" / "pi"
+            launcher.parent.mkdir()
+            launcher.write_text("#!/bin/sh\n")
+            managed = root / "agent" / "install"
+            managed.mkdir(parents=True)
+            version_file = managed / "current-version"
+
+            with patch.object(PROFILE["shutil"], "which", return_value=str(launcher)), \\
+                 patch.dict(PROFILE["os"].environ, {
+                     "PI_CODING_AGENT_DIR": str(root / "agent"),
+                     "PI_MANAGED_INSTALL_ROOT": "",
+                 }):
+                for version, names in [
+                    ("1.5.0", ["mcp", "codemode"]),
+                    ("1.6.0", ["mcp", "codemode", "a-new-builtin"]),
+                ]:
+                    version_file.write_text(version + "\n")
+                    package = (
+                        managed / "releases" / version / "node_modules"
+                        / "@earendil-works" / "pi-coding-agent"
+                    )
+                    registry = package / "dist" / "extensions" / "index.js"
+                    registry.parent.mkdir(parents=True)
+                    (package / "package.json").write_text('{"type": "module"}')
+                    registry.write_text(
+                        "export const builtInExtensions = ["
+                        + ", ".join('{name: "' + name + '"}' for name in names)
+                        + "];"
+                    )
+                    self.assertEqual(
+                        PROFILE["get_builtin_extensions"](),
+                        ["builtin:" + name for name in names],
+                    )
+
+    def test_managed_install_root_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "current-version").write_text("1.5.0\n")
+            registry = (
+                root / "releases" / "1.5.0" / "node_modules"
+                / "@earendil-works" / "pi-coding-agent"
+                / "dist" / "extensions" / "index.js"
+            )
+            registry.parent.mkdir(parents=True)
+            registry.write_text("export const builtInExtensions = [];")
+            with patch.dict(PROFILE["os"].environ, {"PI_MANAGED_INSTALL_ROOT": str(root)}):
+                self.assertEqual(
+                    PROFILE["locate_builtin_registry"]("/nonexistent/bin/pi"),
+                    str(registry),
+                )
+
+    def test_invalid_managed_version_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "current-version").write_text("../../etc/passwd")
+            with patch.dict(PROFILE["os"].environ, {"PI_MANAGED_INSTALL_ROOT": str(root)}):
+                with self.assertRaisesRegex(RuntimeError, "Invalid Pi managed installation version"):
+                    PROFILE["locate_builtin_registry"]("/nonexistent/bin/pi")
+
+    def test_missing_managed_registry_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "current-version").write_text("1.5.0")
+            with patch.dict(PROFILE["os"].environ, {"PI_MANAGED_INSTALL_ROOT": str(root)}):
+                with self.assertRaisesRegex(RuntimeError, "Pi built-in registry not found"):
+                    PROFILE["locate_builtin_registry"]("/nonexistent/bin/pi")
+
     def test_registry_failure_is_not_silently_ignored(self):
         with patch.object(PROFILE["shutil"], "which", return_value="/fake/bin/pi"), \
+             patch.dict(PROFILE["get_builtin_extensions"].__globals__, {"locate_builtin_registry": lambda _: "/tmp/extensions/index.js"}), \
              patch.object(
                  PROFILE["subprocess"],
                  "run",
@@ -200,6 +272,7 @@ class PiProfileTests(unittest.TestCase):
 
     def test_invalid_registry_output_is_rejected(self):
         with patch.object(PROFILE["shutil"], "which", return_value="/fake/bin/pi"), \
+             patch.dict(PROFILE["get_builtin_extensions"].__globals__, {"locate_builtin_registry": lambda _: "/tmp/extensions/index.js"}), \
              patch.object(
                  PROFILE["subprocess"],
                  "run",
